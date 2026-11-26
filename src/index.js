@@ -1,63 +1,92 @@
 import express from "express";
-
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-
 import { z } from "zod";
-
-import { hello } from "./tools/hello.js";
-import { getTime } from "./tools/getTime.js";
-import { executeSql } from "./tools/executeSql.js";
 
 const app = express();
 
 app.use(express.json());
 
-const server = new Server(
-  {
+function createServer() {
+  const server = new McpServer({
     name: "Nickolas MCP",
     version: "1.0.0",
-  },
-  {
-    capabilities: {
-      tools: {},
+  });
+
+  //
+  // HELLO
+  //
+
+  server.registerTool(
+    "hello",
+    {
+      description: "Retorna uma saudação",
+      inputSchema: {
+        nome: z.string(),
+      },
     },
-  },
-);
+    async ({ nome }) => ({
+      content: [
+        {
+          type: "text",
+          text: `Olá ${nome}`,
+        },
+      ],
+    }),
+  );
+
+  //
+  // TIME
+  //
+
+  server.registerTool(
+    "get_time",
+    {
+      description: "Retorna data e hora atual",
+      inputSchema: {},
+    },
+    async () => ({
+      content: [
+        {
+          type: "text",
+          text: new Date().toISOString(),
+        },
+      ],
+    }),
+  );
+
+  //
+  // SQL
+  //
+
+  server.registerTool(
+    "execute_sql",
+    {
+      description: "Executa uma consulta SQL",
+      inputSchema: {
+        sql: z.string(),
+      },
+    },
+    async ({ sql }) => {
+      console.log("SQL recebido:");
+      console.log(sql);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: "SQL recebido com sucesso.",
+          },
+        ],
+      };
+    },
+  );
+
+  return server;
+}
 
 //
-// HELLO
-//
-
-server.tool(
-  "hello",
-  {
-    nome: z.string(),
-  },
-  hello,
-);
-
-//
-// TIME
-//
-
-server.tool("get_time", {}, getTime);
-
-//
-// SQL
-//
-
-server.tool(
-  "execute_sql",
-  {
-    sql: z.string(),
-  },
-  executeSql,
-);
-
-//
-// HEALTH CHECK
+// HEALTH
 //
 
 app.get("/", (_, res) => {
@@ -78,17 +107,29 @@ app.get("/health", (_, res) => {
 //
 
 app.all("/mcp", async (req, res) => {
-  console.log(`[${new Date().toISOString()}] MCP Request`);
+  console.log(`[${new Date().toISOString()}] ${req.method} /mcp`);
 
-  const transport = new StreamableHTTPServerTransport();
+  try {
+    const transport = new StreamableHTTPServerTransport();
 
-  await server.connect(transport);
+    const server = createServer();
 
-  await transport.handleRequest(req, res, req.body);
+    await server.connect(transport);
+
+    await transport.handleRequest(req, res, req.body);
+  } catch (error) {
+    console.error(error);
+
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: error.message,
+      });
+    }
+  }
 });
 
 const port = process.env.PORT || 3000;
 
-app.listen(port, () => {
-  console.log(`Servidor iniciado porta ${port}`);
+app.listen(port, "0.0.0.0", () => {
+  console.log(`Servidor iniciado na porta ${port}`);
 });
