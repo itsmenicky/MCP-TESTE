@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: copilot-mcp
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
